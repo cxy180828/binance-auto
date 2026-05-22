@@ -1,4 +1,4 @@
-ccxt
+python-binance
 pyyaml
 requests
 schedule
