@@ -15,9 +15,12 @@ class FeishuNotifier:
         feishu_config = config.get("feishu", {})
         self._webhook_url = feishu_config.get("webhook_url", "")
 
-    def _send_card(self, card: Dict[str, Any]):
-        """Send a Feishu interactive card message with retry logic."""
-        if not self._webhook_url:
+        drop_alert_config = config.get("drop_alert", {})
+        self._drop_alert_webhook_url = drop_alert_config.get("feishu_webhook_url", "")
+
+    def _send_card_to_url(self, card: Dict[str, Any], webhook_url: str):
+        """Send a Feishu interactive card message to a specific webhook URL with retry logic."""
+        if not webhook_url:
             logger.warning("Feishu webhook URL not configured, skipping notification")
             return
 
@@ -29,7 +32,7 @@ class FeishuNotifier:
         for attempt in range(MAX_RETRIES):
             try:
                 response = requests.post(
-                    self._webhook_url, json=payload, timeout=10
+                    webhook_url, json=payload, timeout=10
                 )
                 response.raise_for_status()
                 logger.debug("Feishu notification sent successfully")
@@ -49,6 +52,10 @@ class FeishuNotifier:
                         MAX_RETRIES,
                         str(e),
                     )
+
+    def _send_card(self, card: Dict[str, Any]):
+        """Send a Feishu interactive card message with retry logic."""
+        self._send_card_to_url(card, self._webhook_url)
 
     def send_trade_notification(self, trade_data: dict):
         """Send a buy/sell trade notification via Feishu webhook."""
@@ -114,3 +121,42 @@ class FeishuNotifier:
         }
 
         self._send_card(card)
+
+    def send_drop_alert(self, alert_data: dict):
+        """Send a sharp drop alert card to the drop alert webhook.
+
+        Args:
+            alert_data: dict with keys: level, symbol, price, drop_pct, volume, timestamp
+        """
+        level = alert_data.get("level", "Warning")
+        symbol = alert_data.get("symbol", "")
+        price = alert_data.get("price", 0)
+        drop_pct = alert_data.get("drop_pct", 0)
+        volume = alert_data.get("volume", 0)
+        timestamp = alert_data.get("timestamp", "")
+
+        if level == "Critical":
+            header_color = "red"
+            header_title = f"Critical Drop Alert - {symbol}"
+        else:
+            header_color = "yellow"
+            header_title = f"Warning Drop Alert - {symbol}"
+
+        elements = [
+            {"tag": "div", "text": {"tag": "plain_text", "content": f"Alert Level: {level}"}},
+            {"tag": "div", "text": {"tag": "plain_text", "content": f"Symbol: {symbol}"}},
+            {"tag": "div", "text": {"tag": "plain_text", "content": f"Current Price: {price:.8f}"}},
+            {"tag": "div", "text": {"tag": "plain_text", "content": f"1-min Drop: {drop_pct:.2f}%"}},
+            {"tag": "div", "text": {"tag": "plain_text", "content": f"Volume: {volume:.2f}"}},
+            {"tag": "div", "text": {"tag": "plain_text", "content": f"Timestamp: {timestamp}"}},
+        ]
+
+        card = {
+            "header": {
+                "title": {"tag": "plain_text", "content": header_title},
+                "template": header_color,
+            },
+            "elements": elements,
+        }
+
+        self._send_card_to_url(card, self._drop_alert_webhook_url)

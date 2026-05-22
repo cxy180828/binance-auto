@@ -33,3 +33,9 @@ logging:
   file: logs/trading.log
 
 daily_summary_time: "20:00"
+
+drop_alert:
+  enabled: true
+  level1_threshold: -0.05    # Warning level: -5%
+  level2_threshold: -0.10    # Critical level: -10%
+  feishu_webhook_url: ""     # Separate webhook for drop alerts

@@ -375,3 +375,187 @@ class TestEntryConditions:
         can_enter, reason = strategy.check_entry_conditions("NEW/USDT")
         assert can_enter is True
         assert reason == ""
+
+
+class TestDropAlerts:
+    def _make_drop_config(self):
+        """Create config with drop alerts enabled."""
+        config = make_config()
+        config["drop_alert"] = {
+            "enabled": True,
+            "level1_threshold": -0.05,
+            "level2_threshold": -0.10,
+            "feishu_webhook_url": "https://example.com/webhook",
+        }
+        return config
+
+    def test_level1_warning_triggered_on_5pct_drop(self):
+        """Level 1 warning triggered when 1-min drop exceeds 5%."""
+        config = self._make_drop_config()
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        # Candle with 6% drop: open=1.0, close=0.94
+        klines = [
+            [1000, 1.0, 1.1, 0.9, 1.05, 100],
+            [2000, 1.0, 1.1, 0.9, 1.02, 100],
+            [3000, 1.0, 1.1, 0.9, 1.03, 100],
+            [4000, 1.0, 1.1, 0.9, 1.01, 100],
+            [5000, 1.0, 1.1, 0.9, 1.04, 100],
+            [6000, 1.0, 1.1, 0.9, 0.94, 200],  # -6% drop
+            [7000, 0.94, 0.95, 0.93, 0.94, 50],
+        ]
+
+        exchange.get_all_alpha_symbols.return_value = ["DROP/USDT"]
+        exchange.get_klines.return_value = klines
+
+        strategy.scan_drop_alerts()
+
+        notifier.send_drop_alert.assert_called_once()
+        call_args = notifier.send_drop_alert.call_args[0][0]
+        assert call_args["level"] == "Warning"
+        assert call_args["symbol"] == "DROP/USDT"
+        assert call_args["price"] == 0.94
+
+    def test_level2_critical_triggered_on_10pct_drop(self):
+        """Level 2 critical triggered when 1-min drop exceeds 10%."""
+        config = self._make_drop_config()
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        # Candle with 12% drop: open=1.0, close=0.88
+        klines = [
+            [1000, 1.0, 1.1, 0.9, 1.05, 100],
+            [2000, 1.0, 1.1, 0.9, 1.02, 100],
+            [3000, 1.0, 1.1, 0.9, 1.03, 100],
+            [4000, 1.0, 1.1, 0.9, 1.01, 100],
+            [5000, 1.0, 1.1, 0.9, 1.04, 100],
+            [6000, 1.0, 1.1, 0.9, 0.88, 200],  # -12% drop
+            [7000, 0.88, 0.90, 0.87, 0.88, 50],
+        ]
+
+        exchange.get_all_alpha_symbols.return_value = ["CRASH/USDT"]
+        exchange.get_klines.return_value = klines
+
+        strategy.scan_drop_alerts()
+
+        notifier.send_drop_alert.assert_called_once()
+        call_args = notifier.send_drop_alert.call_args[0][0]
+        assert call_args["level"] == "Critical"
+        assert call_args["symbol"] == "CRASH/USDT"
+
+    def test_no_alert_for_small_drop(self):
+        """No alert when drop is less than 5%."""
+        config = self._make_drop_config()
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        # Candle with only 3% drop
+        klines = [
+            [1000, 1.0, 1.1, 0.9, 1.05, 100],
+            [2000, 1.0, 1.1, 0.9, 1.02, 100],
+            [3000, 1.0, 1.1, 0.9, 1.03, 100],
+            [4000, 1.0, 1.1, 0.9, 1.01, 100],
+            [5000, 1.0, 1.1, 0.9, 1.04, 100],
+            [6000, 1.0, 1.1, 0.9, 0.97, 200],  # -3% drop
+            [7000, 0.97, 0.98, 0.96, 0.97, 50],
+        ]
+
+        exchange.get_all_alpha_symbols.return_value = ["SAFE/USDT"]
+        exchange.get_klines.return_value = klines
+
+        strategy.scan_drop_alerts()
+
+        notifier.send_drop_alert.assert_not_called()
+
+    def test_no_alert_for_price_increase(self):
+        """No alert when price increases."""
+        config = self._make_drop_config()
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        # Candle with 5% increase
+        klines = [
+            [1000, 1.0, 1.1, 0.9, 1.05, 100],
+            [2000, 1.0, 1.1, 0.9, 1.02, 100],
+            [3000, 1.0, 1.1, 0.9, 1.03, 100],
+            [4000, 1.0, 1.1, 0.9, 1.01, 100],
+            [5000, 1.0, 1.1, 0.9, 1.04, 100],
+            [6000, 1.0, 1.1, 0.9, 1.05, 200],  # +5% increase
+            [7000, 1.05, 1.06, 1.04, 1.05, 50],
+        ]
+
+        exchange.get_all_alpha_symbols.return_value = ["UP/USDT"]
+        exchange.get_klines.return_value = klines
+
+        strategy.scan_drop_alerts()
+
+        notifier.send_drop_alert.assert_not_called()
+
+    def test_drop_alert_disabled(self):
+        """No alerts sent when drop_alert is disabled."""
+        config = make_config()
+        config["drop_alert"] = {"enabled": False}
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        strategy.scan_drop_alerts()
+
+        exchange.get_all_alpha_symbols.assert_not_called()
+        notifier.send_drop_alert.assert_not_called()
+
+    def test_drop_alert_not_configured(self):
+        """No alerts sent when drop_alert config is absent."""
+        config = make_config()
+        # No drop_alert key at all
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        strategy.scan_drop_alerts()
+
+        exchange.get_all_alpha_symbols.assert_not_called()
+        notifier.send_drop_alert.assert_not_called()
+
+    def test_exactly_5pct_drop_triggers_warning(self):
+        """Exactly 5% drop should trigger level 1 warning."""
+        config = self._make_drop_config()
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        # Candle with exactly 5% drop: open=1.0, close=0.95
+        klines = [
+            [1000, 1.0, 1.1, 0.9, 1.05, 100],
+            [2000, 1.0, 1.1, 0.9, 1.02, 100],
+            [3000, 1.0, 1.1, 0.9, 1.03, 100],
+            [4000, 1.0, 1.1, 0.9, 1.01, 100],
+            [5000, 1.0, 1.1, 0.9, 1.04, 100],
+            [6000, 1.0, 1.1, 0.9, 0.95, 200],  # exactly -5% drop
+            [7000, 0.95, 0.96, 0.94, 0.95, 50],
+        ]
+
+        exchange.get_all_alpha_symbols.return_value = ["EDGE/USDT"]
+        exchange.get_klines.return_value = klines
+
+        strategy.scan_drop_alerts()
+
+        notifier.send_drop_alert.assert_called_once()
+        call_args = notifier.send_drop_alert.call_args[0][0]
+        assert call_args["level"] == "Warning"
+
+    def test_exactly_10pct_drop_triggers_critical(self):
+        """Exactly 10% drop should trigger level 2 critical."""
+        config = self._make_drop_config()
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        # Candle with 10% drop: open=1.0, close=0.899 (slightly over 10%)
+        klines = [
+            [1000, 1.0, 1.1, 0.9, 1.05, 100],
+            [2000, 1.0, 1.1, 0.9, 1.02, 100],
+            [3000, 1.0, 1.1, 0.9, 1.03, 100],
+            [4000, 1.0, 1.1, 0.9, 1.01, 100],
+            [5000, 1.0, 1.1, 0.9, 1.04, 100],
+            [6000, 1.0, 1.1, 0.9, 0.899, 200],  # -10.1% drop
+            [7000, 0.899, 0.91, 0.89, 0.899, 50],
+        ]
+
+        exchange.get_all_alpha_symbols.return_value = ["EXACT/USDT"]
+        exchange.get_klines.return_value = klines
+
+        strategy.scan_drop_alerts()
+
+        notifier.send_drop_alert.assert_called_once()
+        call_args = notifier.send_drop_alert.call_args[0][0]
+        assert call_args["level"] == "Critical"

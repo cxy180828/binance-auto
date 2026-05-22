@@ -48,6 +48,12 @@ class TradingStrategy:
         self.filter_list = config.get("filter_list", [])
         self.scan_symbols = config.get("scan_symbols", [])
 
+        # Drop alert configuration
+        drop_alert_cfg = config.get("drop_alert", {})
+        self.drop_alert_enabled = drop_alert_cfg.get("enabled", False)
+        self.drop_alert_level1_threshold = drop_alert_cfg.get("level1_threshold", -0.05)
+        self.drop_alert_level2_threshold = drop_alert_cfg.get("level2_threshold", -0.10)
+
         # Load persisted positions from storage
         self._load_positions()
 
@@ -319,3 +325,61 @@ class TradingStrategy:
 
         except Exception as e:
             logger.error("Failed to execute sell for %s: %s", position.symbol, str(e))
+
+    def scan_drop_alerts(self):
+        """Scan all alpha symbols for sharp drops and send alerts."""
+        if not self.drop_alert_enabled:
+            return
+
+        try:
+            if self.scan_symbols:
+                symbols = self.scan_symbols
+            else:
+                symbols = self.exchange.get_all_alpha_symbols()
+        except Exception as e:
+            logger.error("Failed to get alpha symbols for drop alert: %s", str(e))
+            return
+
+        for symbol in symbols:
+            try:
+                time.sleep(0.1)
+                klines = self.exchange.get_klines(symbol, "1m", 7)
+                if not klines or len(klines) < 2:
+                    continue
+
+                # Check the last closed candle (second-to-last, index -2)
+                signal_candle = klines[-2]
+                candle_open = signal_candle[1]
+                candle_close = signal_candle[4]
+                candle_volume = signal_candle[5]
+
+                if candle_open <= 0:
+                    continue
+
+                price_change = (candle_close - candle_open) / candle_open
+
+                # Determine alert level
+                if price_change <= self.drop_alert_level2_threshold:
+                    level = "Critical"
+                elif price_change <= self.drop_alert_level1_threshold:
+                    level = "Warning"
+                else:
+                    continue
+
+                logger.info(
+                    "DROP ALERT [%s] %s: %.2f%% drop, price=%.8f, volume=%.2f",
+                    level, symbol, price_change * 100, candle_close, candle_volume,
+                )
+
+                self.notifier.send_drop_alert({
+                    "level": level,
+                    "symbol": symbol,
+                    "price": candle_close,
+                    "drop_pct": price_change * 100,
+                    "volume": candle_volume,
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                })
+
+            except Exception as e:
+                logger.error("Error scanning drop alert for %s: %s", symbol, str(e))
+                continue

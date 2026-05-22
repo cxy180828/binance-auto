@@ -144,6 +144,7 @@ def main():
     while not shutdown_requested:
         try:
             strategy.scan_signals()
+            strategy.scan_drop_alerts()
             strategy.manage_positions()
             schedule.run_pending()
             time.sleep(5)
