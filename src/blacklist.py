@@ -37,7 +37,8 @@ class BlacklistManager:
                     len(symbols),
                 )
         except Exception as e:
-            logger.warning("Failed to seed blacklist from storage: %s", str(e))
+            logger.error("Failed to seed blacklist from storage: %s", str(e))
+            raise
 
     def record_loss(self, symbol: str):
         """Increment loss count for a symbol; blacklist if threshold reached."""

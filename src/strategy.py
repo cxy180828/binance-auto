@@ -186,6 +186,10 @@ class TradingStrategy:
                 elapsed = datetime.now() - position.entry_time
                 if elapsed >= timedelta(minutes=self.time_stop_loss_minutes) and not position.trailing_stop_active:
                     symbols_to_close.append((symbol, "time_stop_loss"))
+                    continue
+
+                # Persist updated position state (highest_price, trailing stop fields)
+                self.storage.save_position(position)
 
             except Exception as e:
                 logger.error("Error managing position %s: %s", symbol, str(e))

@@ -119,7 +119,13 @@ def main():
     exchange = Exchange(config)
     notifier = FeishuNotifier(config)
     blacklist_manager = BlacklistManager(config.get("blacklist", {}))
-    blacklist_manager.seed_from_storage(storage)
+    try:
+        blacklist_manager.seed_from_storage(storage)
+    except Exception as e:
+        logger.error(
+            "Failed to seed blacklist from storage: %s. "
+            "Blacklist state may be incomplete.", str(e)
+        )
     strategy = TradingStrategy(config, exchange, storage, notifier, blacklist_manager)
 
     # Setup signal handlers
