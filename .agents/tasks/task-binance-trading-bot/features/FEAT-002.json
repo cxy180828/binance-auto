@@ -2,7 +2,7 @@
   "id": "FEAT-002",
   "type": "feat",
   "description": "Implement the trading strategy engine, blacklist management, Feishu notifier, and the main entry point that ties everything together into a continuously running bot.",
-  "status": "pending",
+  "status": "in_progress",
   "steps": [
     "Create src/blacklist.py: BlacklistManager class that tracks consecutive losses per symbol, adds symbols to blacklist after N consecutive losses (configurable, default 2), auto-removes from blacklist after configurable duration (default 30 minutes), provides is_blacklisted(symbol) check, provides record_loss(symbol) and record_win(symbol) methods, stores state in memory (resets on restart).",
     "Create src/notifier.py: FeishuNotifier class with methods send_trade_notification(trade, position_info) for buy/sell alerts, send_daily_summary(summary_data) for end-of-day report. Format messages as Feishu interactive cards with: symbol, side, price, quantity, profit/loss (for sells), timestamp. Daily summary includes: total trades, winning trades, losing trades, total PnL, top gainers/losers. Handle webhook URL not configured gracefully (log warning, don't crash). Include retry logic for HTTP failures.",
