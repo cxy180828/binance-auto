@@ -1,7 +1,14 @@
 {
   "task_id": "task-binance-trading-bot",
   "task_description": "Build an automated trading bot for Binance Alpha market tokens. The bot monitors 1-minute candles for all Alpha tokens, buys when a candle shows >5% price increase with volume confirmation, uses dynamic trailing stop-loss for profit-taking, time-based stop-loss for exits, and includes blacklist management, cooldown periods, daily limits, Feishu notifications, and SQLite trade recording. Connects to Binance testnet by default.",
-  "status": "in_progress",
+  "status": "completed",
   "feature_order": ["FEAT-001", "FEAT-002"],
-  "blocked_reason": null
+  "blocked_reason": null,
+  "verification": {
+    "build": "pass",
+    "tests": "pass",
+    "test_quality": "pass",
+    "docker_build": "skipped",
+    "summary": "All 35 tests pass. pip install succeeds. main.py --check validates config and exits cleanly. v2 review fixes applied: config.yaml untracked, position state flushed in manage_positions, blacklist seeding error handling improved (re-raise + catch in main), new test_storage.py with real SQLite tests for position persistence, recent traded symbols, and blacklist seeding."
+  }
 }
