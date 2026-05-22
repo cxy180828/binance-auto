@@ -28,6 +28,9 @@ filter_list: []
 
 scan_symbols: []
 
+alpha:
+  cache_minutes: 10
+
 logging:
   level: INFO
   file: logs/trading.log

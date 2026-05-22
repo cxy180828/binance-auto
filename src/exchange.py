@@ -3,6 +3,7 @@ import os
 import time
 from typing import List, Optional, Dict, Any
 
+import requests
 from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 
@@ -10,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
+
+ALPHA_SYMBOL_LIST_URL = "https://www.binance.com/bapi/composite/v1/public/market/alpha/symbol/list"
+ALPHA_MARKET_LIST_URL = "https://www.binance.com/gateway-api/v1/public/market/alpha/list"
 
 
 class Exchange:
@@ -25,6 +29,14 @@ class Exchange:
             self.client.API_URL = 'https://testnet.binance.vision/api'
 
         self.testnet = testnet
+        self.config = config
+
+        # Alpha symbols cache
+        alpha_cfg = config.get("alpha", {})
+        self.alpha_cache_minutes = alpha_cfg.get("cache_minutes", 10)
+        self.alpha_symbols_cache: List[str] = []
+        self.alpha_symbols_cache_time: float = 0
+
         logger.info(
             "Exchange initialized (testnet=%s)", testnet
         )
@@ -79,20 +91,105 @@ class Exchange:
             logger.error("Failed to fetch klines for %s: %s", symbol, str(e))
             raise
 
-    def get_all_alpha_symbols(self) -> List[str]:
-        """Get all USDT trading pairs as a proxy for Alpha tokens."""
+    def fetch_alpha_symbols(self) -> List[str]:
+        """Fetch Binance Alpha market token list from web API with caching."""
+        # Check cache validity
+        cache_ttl = self.alpha_cache_minutes * 60
+        if self.alpha_symbols_cache and (time.time() - self.alpha_symbols_cache_time) < cache_ttl:
+            return self.alpha_symbols_cache
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Content-Type": "application/json",
+        }
+
+        symbols: List[str] = []
+
+        # Try primary endpoint
         try:
-            exchange_info = self._retry(self.client.get_exchange_info)
-            symbols = [
-                s["symbol"]
-                for s in exchange_info["symbols"]
-                if s["symbol"].endswith("USDT") and s["status"] == "TRADING"
-            ]
-            logger.info("Found %d USDT pairs", len(symbols))
+            resp = requests.post(
+                ALPHA_SYMBOL_LIST_URL,
+                headers=headers,
+                json={},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                # Response may contain data.data or data directly as a list
+                token_list = data.get("data", data) if isinstance(data, dict) else data
+                if isinstance(token_list, list):
+                    for item in token_list:
+                        if isinstance(item, str):
+                            name = item.upper()
+                        elif isinstance(item, dict):
+                            name = (item.get("symbol") or item.get("name") or "").upper()
+                        else:
+                            continue
+                        if not name:
+                            continue
+                        pair = name if name.endswith("USDT") else name + "USDT"
+                        symbols.append(pair)
+                if symbols:
+                    logger.info("Fetched %d Alpha symbols from primary endpoint", len(symbols))
+                    self.alpha_symbols_cache = symbols
+                    self.alpha_symbols_cache_time = time.time()
+                    return symbols
+        except Exception as e:
+            logger.warning("Primary Alpha endpoint failed: %s", str(e))
+
+        # Try fallback endpoint
+        try:
+            resp = requests.get(
+                ALPHA_MARKET_LIST_URL,
+                headers=headers,
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                token_list = data.get("data", data) if isinstance(data, dict) else data
+                if isinstance(token_list, list):
+                    for item in token_list:
+                        if isinstance(item, str):
+                            name = item.upper()
+                        elif isinstance(item, dict):
+                            name = (item.get("symbol") or item.get("name") or "").upper()
+                        else:
+                            continue
+                        if not name:
+                            continue
+                        pair = name if name.endswith("USDT") else name + "USDT"
+                        symbols.append(pair)
+                if symbols:
+                    logger.info("Fetched %d Alpha symbols from fallback endpoint", len(symbols))
+                    self.alpha_symbols_cache = symbols
+                    self.alpha_symbols_cache_time = time.time()
+                    return symbols
+        except Exception as e:
+            logger.warning("Fallback Alpha endpoint failed: %s", str(e))
+
+        logger.warning("All Alpha API endpoints failed, returning empty list")
+        return []
+
+    def get_all_alpha_symbols(self) -> List[str]:
+        """Get Binance Alpha market token symbols.
+
+        Tries to fetch from Binance Alpha API first. If that fails,
+        falls back to scan_symbols from config. If both are empty,
+        logs a warning.
+        """
+        symbols = self.fetch_alpha_symbols()
+        if symbols:
+            logger.info("Found %d Alpha symbols", len(symbols))
             return symbols
-        except BinanceAPIException as e:
-            logger.error("Failed to load markets: %s", str(e))
-            raise
+
+        # Fallback to scan_symbols from config
+        scan_symbols = self.config.get("scan_symbols", [])
+        if scan_symbols:
+            logger.info("Found %d symbols (fallback to scan_symbols)", len(scan_symbols))
+            return scan_symbols
+
+        logger.warning("No Alpha symbols available: API failed and scan_symbols is empty")
+        return []
 
     def place_market_buy(self, symbol: str, usdt_amount: float) -> Dict[str, Any]:
         """Place a market buy order for a given USDT amount."""
