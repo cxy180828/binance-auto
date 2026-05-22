@@ -37,6 +37,7 @@ def make_strategy(config=None):
     config = config or make_config()
     exchange = Mock()
     storage = Mock()
+    storage.load_positions.return_value = []
     notifier = Mock()
     blacklist_manager = BlacklistManager(config.get("blacklist", {}))
 
@@ -314,6 +315,55 @@ class TestEntryConditions:
         can_enter, reason = strategy.check_entry_conditions("TEST/USDT")
         assert can_enter is False
         assert "already holding" in reason
+
+    def test_max_open_positions_blocks_entry(self):
+        """Cannot enter when max open positions limit is reached."""
+        config = make_config()
+        config["limits"]["max_open_positions"] = 2
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        # Fill up to the limit
+        strategy.positions["AAA/USDT"] = Position(
+            symbol="AAA/USDT",
+            entry_price=1.0,
+            quantity=100.0,
+            amount=100.0,
+            entry_time=datetime.now(),
+            highest_price=1.0,
+        )
+        strategy.positions["BBB/USDT"] = Position(
+            symbol="BBB/USDT",
+            entry_price=1.0,
+            quantity=100.0,
+            amount=100.0,
+            entry_time=datetime.now(),
+            highest_price=1.0,
+        )
+
+        can_enter, reason = strategy.check_entry_conditions("CCC/USDT")
+        assert can_enter is False
+        assert "max open positions" in reason
+
+    def test_below_max_open_positions_allows_entry(self):
+        """Can enter when below max open positions limit."""
+        config = make_config()
+        config["limits"]["max_open_positions"] = 3
+        strategy, exchange, storage, notifier, bm = make_strategy(config)
+
+        strategy.positions["AAA/USDT"] = Position(
+            symbol="AAA/USDT",
+            entry_price=1.0,
+            quantity=100.0,
+            amount=100.0,
+            entry_time=datetime.now(),
+            highest_price=1.0,
+        )
+
+        storage.get_trade_count_today.return_value = 0
+        storage.get_daily_pnl.return_value = 0.0
+
+        can_enter, reason = strategy.check_entry_conditions("CCC/USDT")
+        assert can_enter is True
 
     def test_all_conditions_pass(self):
         """All conditions met allows entry."""

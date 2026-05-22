@@ -12,6 +12,33 @@ class BlacklistManager:
         self._blacklist: Dict[str, datetime] = {}
         self._loss_counts: Dict[str, int] = {}
 
+    def seed_from_storage(self, storage):
+        """Seed loss counts from the database on startup.
+
+        Queries recent traded symbols and pre-loads their consecutive loss
+        counts so that the blacklist state survives restarts.
+        """
+        try:
+            symbols = storage.get_recent_traded_symbols()
+            for symbol in symbols:
+                count = storage.get_consecutive_losses(symbol)
+                if count > 0:
+                    self._loss_counts[symbol] = count
+                    if count >= self._consecutive_losses_threshold:
+                        self._blacklist[symbol] = datetime.now()
+                        logger.info(
+                            "Seeded blacklist: %s with %d consecutive losses",
+                            symbol,
+                            count,
+                        )
+            if symbols:
+                logger.info(
+                    "Seeded blacklist manager from %d symbols in storage",
+                    len(symbols),
+                )
+        except Exception as e:
+            logger.warning("Failed to seed blacklist from storage: %s", str(e))
+
     def record_loss(self, symbol: str):
         """Increment loss count for a symbol; blacklist if threshold reached."""
         self._loss_counts[symbol] = self._loss_counts.get(symbol, 0) + 1

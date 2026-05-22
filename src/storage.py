@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, date
 from typing import List, Optional
 
-from src.models import Trade
+from src.models import Trade, Position
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,18 @@ class Storage:
                     total_pnl REAL NOT NULL DEFAULT 0.0,
                     winning_trades INTEGER NOT NULL DEFAULT 0,
                     losing_trades INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS positions (
+                    symbol TEXT PRIMARY KEY,
+                    entry_price REAL NOT NULL,
+                    quantity REAL NOT NULL,
+                    amount REAL NOT NULL,
+                    entry_time TEXT NOT NULL,
+                    highest_price REAL NOT NULL DEFAULT 0.0,
+                    trailing_stop_active INTEGER NOT NULL DEFAULT 0,
+                    trailing_stop_price REAL
                 )
             """)
             conn.commit()
@@ -131,12 +143,12 @@ class Storage:
             conn.close()
 
     def get_trade_count_today(self) -> int:
-        """Return number of trades today."""
+        """Return number of buy-side trades today (each round-trip counts as one trade)."""
         conn = self._get_connection()
         try:
             today_str = date.today().isoformat()
             cursor = conn.execute(
-                "SELECT COUNT(*) as cnt FROM trades WHERE timestamp >= ?",
+                "SELECT COUNT(*) as cnt FROM trades WHERE timestamp >= ? AND side = 'buy'",
                 (today_str,),
             )
             row = cursor.fetchone()
@@ -153,5 +165,74 @@ class Storage:
                 (start.isoformat(), end.isoformat()),
             )
             return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def save_position(self, position: Position):
+        """Save or update an open position in the database."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO positions
+                (symbol, entry_price, quantity, amount, entry_time, highest_price, trailing_stop_active, trailing_stop_price)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    position.symbol,
+                    position.entry_price,
+                    position.quantity,
+                    position.amount,
+                    position.entry_time.isoformat(),
+                    position.highest_price,
+                    1 if position.trailing_stop_active else 0,
+                    position.trailing_stop_price,
+                ),
+            )
+            conn.commit()
+            logger.info("Saved position for %s", position.symbol)
+        finally:
+            conn.close()
+
+    def delete_position(self, symbol: str):
+        """Delete a position from the database (on sell)."""
+        conn = self._get_connection()
+        try:
+            conn.execute("DELETE FROM positions WHERE symbol = ?", (symbol,))
+            conn.commit()
+            logger.info("Deleted position for %s", symbol)
+        finally:
+            conn.close()
+
+    def load_positions(self) -> List[Position]:
+        """Load all persisted positions from the database."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute("SELECT * FROM positions")
+            positions = []
+            for row in cursor.fetchall():
+                position = Position(
+                    symbol=row["symbol"],
+                    entry_price=row["entry_price"],
+                    quantity=row["quantity"],
+                    amount=row["amount"],
+                    entry_time=datetime.fromisoformat(row["entry_time"]),
+                    highest_price=row["highest_price"],
+                    trailing_stop_active=bool(row["trailing_stop_active"]),
+                    trailing_stop_price=row["trailing_stop_price"],
+                )
+                positions.append(position)
+            return positions
+        finally:
+            conn.close()
+
+    def get_recent_traded_symbols(self) -> List[str]:
+        """Return distinct symbols that have recent sell trades."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT DISTINCT symbol FROM trades WHERE side = 'sell' AND profit_loss IS NOT NULL"
+            )
+            return [row["symbol"] for row in cursor.fetchall()]
         finally:
             conn.close()

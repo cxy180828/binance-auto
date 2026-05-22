@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from typing import List, Optional, Dict, Any
 
@@ -13,8 +14,8 @@ RETRY_DELAY = 1.0
 class Exchange:
     def __init__(self, config: dict):
         binance_config = config.get("binance", {})
-        api_key = binance_config.get("api_key", "")
-        secret = binance_config.get("secret", "")
+        api_key = os.environ.get("BINANCE_API_KEY") or binance_config.get("api_key", "")
+        secret = os.environ.get("BINANCE_SECRET") or binance_config.get("secret", "")
         testnet = binance_config.get("testnet", True)
 
         exchange_params = {

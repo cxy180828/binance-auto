@@ -1,7 +1,8 @@
 import logging
+import time
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from src.models import Trade, Position, Signal
 from src.exchange import Exchange
@@ -42,19 +43,39 @@ class TradingStrategy:
         limits_cfg = config.get("limits", {})
         self.max_daily_trades = limits_cfg.get("max_daily_trades", 50)
         self.max_daily_loss_usdt = limits_cfg.get("max_daily_loss_usdt", 500)
+        self.max_open_positions = limits_cfg.get("max_open_positions", 10)
 
         self.filter_list = config.get("filter_list", [])
+        self.scan_symbols = config.get("scan_symbols", [])
+
+        # Load persisted positions from storage
+        self._load_positions()
+
+    def _load_positions(self):
+        """Load persisted positions from storage on startup."""
+        try:
+            positions = self.storage.load_positions()
+            for position in positions:
+                self.positions[position.symbol] = position
+            if positions:
+                logger.info("Loaded %d persisted positions from storage", len(positions))
+        except Exception as e:
+            logger.warning("Failed to load positions from storage: %s", str(e))
 
     def scan_signals(self):
         """Scan all alpha symbols for trading signals."""
         try:
-            symbols = self.exchange.get_all_alpha_symbols()
+            if self.scan_symbols:
+                symbols = self.scan_symbols
+            else:
+                symbols = self.exchange.get_all_alpha_symbols()
         except Exception as e:
             logger.error("Failed to get alpha symbols: %s", str(e))
             return
 
         for symbol in symbols:
             try:
+                time.sleep(0.1)
                 klines = self.exchange.get_klines(symbol, "1m", 7)
                 if not klines or len(klines) < 7:
                     continue
@@ -119,6 +140,10 @@ class TradingStrategy:
         if symbol in self.positions:
             return False, "already holding position"
 
+        # Max open positions check
+        if len(self.positions) >= self.max_open_positions:
+            return False, "max open positions reached"
+
         # Daily trade count check
         trade_count = self.storage.get_trade_count_today()
         if trade_count >= self.max_daily_trades:
@@ -149,7 +174,8 @@ class TradingStrategy:
                 activation_price = position.entry_price * (1 + self.trailing_stop_activation)
                 if current_price >= activation_price:
                     position.trailing_stop_active = True
-                    position.trailing_stop_price = position.highest_price * (1 - self.trailing_stop_drop)
+                    new_stop = position.highest_price * (1 - self.trailing_stop_drop)
+                    position.trailing_stop_price = max(position.trailing_stop_price or 0, new_stop)
 
                 # Check trailing stop trigger
                 if position.trailing_stop_active and current_price <= position.trailing_stop_price:
@@ -203,6 +229,9 @@ class TradingStrategy:
             )
             self.positions[signal.symbol] = position
 
+            # Persist position to storage
+            self.storage.save_position(position)
+
             # Set cooldown
             self.cooldowns[signal.symbol] = datetime.now()
 
@@ -253,6 +282,9 @@ class TradingStrategy:
             # Remove from positions
             if position.symbol in self.positions:
                 del self.positions[position.symbol]
+
+            # Remove persisted position from storage
+            self.storage.delete_position(position.symbol)
 
             # Update blacklist
             if profit_loss < 0:
