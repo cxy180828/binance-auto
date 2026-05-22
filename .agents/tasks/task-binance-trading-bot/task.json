@@ -9,6 +9,6 @@
     "tests": "pass",
     "test_quality": "pass",
     "docker_build": "skipped",
-    "summary": "All 35 tests pass. pip install succeeds. main.py --check validates config and exits cleanly. v2 review fixes applied: config.yaml untracked, position state flushed in manage_positions, blacklist seeding error handling improved (re-raise + catch in main), new test_storage.py with real SQLite tests for position persistence, recent traded symbols, and blacklist seeding."
+    "summary": "All 35 tests pass (7 blacklist, 15 strategy, 11 storage + 2 extra strategy). pip install succeeds. main.py --check validates config and exits cleanly. Two review passes completed with all issues addressed."
   }
 }
