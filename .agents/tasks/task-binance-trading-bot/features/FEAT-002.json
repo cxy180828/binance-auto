@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Implement the trading strategy engine, blacklist management, Feishu notifier, and the main entry point that ties everything together into a continuously running bot.",
+  "status": "pending",
+  "steps": [
+    "Create src/blacklist.py: BlacklistManager class that tracks consecutive losses per symbol, adds symbols to blacklist after N consecutive losses (configurable, default 2), auto-removes from blacklist after configurable duration (default 30 minutes), provides is_blacklisted(symbol) check, provides record_loss(symbol) and record_win(symbol) methods, stores state in memory (resets on restart).",
+    "Create src/notifier.py: FeishuNotifier class with methods send_trade_notification(trade, position_info) for buy/sell alerts, send_daily_summary(summary_data) for end-of-day report. Format messages as Feishu interactive cards with: symbol, side, price, quantity, profit/loss (for sells), timestamp. Daily summary includes: total trades, winning trades, losing trades, total PnL, top gainers/losers. Handle webhook URL not configured gracefully (log warning, don't crash). Include retry logic for HTTP failures.",
+    "Create src/strategy.py: TradingStrategy class that orchestrates the entire trading loop. Methods: (1) scan_signals() - iterate all alpha symbols, fetch 1-min klines, check if last closed candle has >5% price increase AND volume > 2x average of previous 5 candles; (2) check_entry_conditions(symbol) - verify not in cooldown, not blacklisted, not in filter_list, daily limits not exceeded; (3) manage_positions() - for each open position: check if trailing stop is active (price rose 5% from entry), if active check if price dropped 2% from highest, also check time-based stop-loss (3 min elapsed without 5% rise); (4) execute_buy(signal) - place market buy for configured USDT amount, record trade, notify Feishu; (5) execute_sell(position, reason) - place market sell, calculate PnL, record trade, update blacklist, notify Feishu.",
+    "Create main.py: entry point that loads config.yaml, initializes all components (Exchange, Storage, Strategy, Notifier, BlacklistManager), sets up logging (to both file in logs/ directory and console, with rotation), schedules daily summary at configured time, runs main loop: every ~5 seconds call strategy.scan_signals() and strategy.manage_positions(). Include graceful shutdown on SIGINT/SIGTERM. Add --check flag that validates config and exits.",
+    "Create a tests/ directory with tests/test_strategy.py and tests/test_blacklist.py: test blacklist auto-expiry logic, test signal detection logic with mock kline data, test trailing stop calculations, test time-based stop-loss logic, test cooldown enforcement, test daily limit enforcement."
+  ],
+  "acceptance_criteria": [
+    "src/blacklist.py correctly tracks consecutive losses and auto-removes after configured duration",
+    "src/notifier.py formats and sends Feishu messages (gracefully handles missing webhook URL)",
+    "src/strategy.py implements all trading rules: 5% price increase detection, volume filter, trailing stop, time stop-loss, cooldown, daily limits",
+    "main.py runs without errors in check mode: python main.py --check",
+    "main.py can start the bot loop (will connect to testnet if keys provided, otherwise logs connection error gracefully)",
+    "Tests pass: python -m pytest tests/ -v",
+    "All strategy rules are testable and tested with mock data"
+  ],
+  "verification": [
+    "Run: python main.py --check (should validate config and exit cleanly)",
+    "Run: python -m pytest tests/ -v (all tests should pass)",
+    "Run: python -c \"from src.strategy import TradingStrategy; from src.notifier import FeishuNotifier; from src.blacklist import BlacklistManager; print('All imports OK')\"",
+    "Run: python -c \"from src.blacklist import BlacklistManager; bm = BlacklistManager({'consecutive_losses': 2, 'duration_minutes': 30}); bm.record_loss('TEST'); bm.record_loss('TEST'); assert bm.is_blacklisted('TEST'); print('Blacklist logic OK')\""
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

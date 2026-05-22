@@ -1,0 +1,6 @@
+ccxt
+pyyaml
+requests
+schedule
+python-dateutil
+pytest

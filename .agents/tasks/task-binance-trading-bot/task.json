@@ -1,0 +1,7 @@
+{
+  "task_id": "task-binance-trading-bot",
+  "task_description": "Build an automated trading bot for Binance Alpha market tokens. The bot monitors 1-minute candles for all Alpha tokens, buys when a candle shows >5% price increase with volume confirmation, uses dynamic trailing stop-loss for profit-taking, time-based stop-loss for exits, and includes blacklist management, cooldown periods, daily limits, Feishu notifications, and SQLite trade recording. Connects to Binance testnet by default.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002"],
+  "blocked_reason": null
+}

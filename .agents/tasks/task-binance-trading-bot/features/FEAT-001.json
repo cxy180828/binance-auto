@@ -1,0 +1,30 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Create the complete project scaffolding: config file, data models, storage layer, and exchange API wrapper. This establishes the foundation that all other components depend on.",
+  "status": "in_progress",
+  "steps": [
+    "Create requirements.txt with dependencies: ccxt (Binance API), pyyaml (config), requests (Feishu webhook), schedule (daily summary scheduling), python-dateutil, pytest (dev dependency)",
+    "Create config.yaml with all configurable parameters: binance testnet API keys (placeholders), trading parameters (buy_amount: 100, price_increase_threshold: 0.05, trailing_stop_activation: 0.05, trailing_stop_drop: 0.02, time_stop_loss_minutes: 3, volume_multiplier: 2.0, cooldown_minutes: 5), blacklist settings (consecutive_losses: 2, blacklist_duration_minutes: 30), daily limits (max_daily_loss: 500, max_daily_trades: 50), feishu webhook URL placeholder, filter_list (empty list), logging settings, daily_summary_time: '20:00'",
+    "Create src/__init__.py",
+    "Create src/models.py with dataclasses: Trade (id, symbol, side, price, quantity, amount, timestamp, profit_loss, status), Position (symbol, entry_price, quantity, amount, entry_time, highest_price, trailing_stop_active, trailing_stop_price), Signal (symbol, candle_open, candle_close, candle_volume, avg_volume, price_change_pct, timestamp)",
+    "Create src/storage.py with SQLite operations: initialize database (create trades table, daily_summary table), record_trade(), get_trades_today(), get_daily_pnl(), get_consecutive_losses(symbol), get_all_trades_in_range(). Use data/trades.db as database path. Include proper connection management.",
+    "Create src/exchange.py wrapping ccxt for Binance: init with testnet config, get_klines(symbol, timeframe, limit), get_all_alpha_symbols(), place_market_buy(symbol, usdt_amount), place_market_sell(symbol, quantity), get_ticker_price(symbol). Handle testnet vs live mode based on config. Include error handling and retry logic."
+  ],
+  "acceptance_criteria": [
+    "pip install -r requirements.txt succeeds without errors",
+    "config.yaml contains all required parameters with sensible defaults",
+    "src/models.py defines Trade, Position, and Signal dataclasses with all required fields",
+    "src/storage.py can initialize the SQLite database and perform CRUD operations",
+    "src/exchange.py provides a complete wrapper around ccxt for Binance testnet",
+    "All modules can be imported without errors: python -c 'from src.models import Trade, Position, Signal; from src.storage import Storage; from src.exchange import Exchange'"
+  ],
+  "verification": [
+    "Run: pip install -r requirements.txt",
+    "Run: python -c \"from src.models import Trade, Position, Signal; from src.storage import Storage; from src.exchange import Exchange; print('All imports OK')\"",
+    "Run: python -c \"from src.storage import Storage; import yaml; cfg = yaml.safe_load(open('config.yaml')); s = Storage(cfg); s.initialize(); print('DB initialized OK')\"",
+    "Run: python -m pytest tests/ -v (if tests are added)"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
